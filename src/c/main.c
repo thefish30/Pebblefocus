@@ -61,12 +61,14 @@ static GBitmap *s_reload_icon = NULL;
 static int  s_pending_check = -1;   // row showing checkmark beat, -1 = none
 static AppTimer *s_check_timer = NULL;
 static bool s_synced = false;       // phone sync complete
+static int  s_cap = MAX_ITEMS;      // Clay-configurable item cap
 
 // ── AppMessage protocol ──────────────────────────────────────────
 // Commands, phone → watch
 #define CMD_ITEM           1   // one item: LIST, INDEX, TEXT, COLOR, FLAGS
 #define CMD_SYNC_COMPLETE  2
 #define CMD_SYNC_START     3   // clear watch lists; re-stream replaces
+#define CMD_SET_CAP        4   // INDEX carries the cap value
 // Commands, watch → phone (semantic deltas; pkjs mirrors the same logic)
 #define CMD_CHECKOFF      10   // INDEX
 #define CMD_TOGGLE_DOT    11   // INDEX
@@ -89,7 +91,7 @@ static void send_delta(int cmd, int index, const char *text) {
 
 // ── Model operations ─────────────────────────────────────────────
 static void add_active(const char *text, ItemColor c) {
-  if (s_active_count >= MAX_ITEMS) return;   // cap: reject
+  if (s_active_count >= s_cap || s_active_count >= MAX_ITEMS) return; // cap: reject
   Item *it = &s_active[s_active_count++];
   strncpy(it->text, text, MAX_TEXT - 1);
   it->text[MAX_TEXT - 1] = '\0';
@@ -221,7 +223,7 @@ static void list_update_proc(Layer *layer, GContext *ctx) {
   if (s_confirm_clear) {
     snprintf(header, sizeof(header), "CLEAR ALL? DN-hold=yes");
   } else {
-    snprintf(header, sizeof(header), done_view ? "DONE %d  v4" : "FOCUS %d/%d  v4",
+    snprintf(header, sizeof(header), done_view ? "DONE %d  v5" : "FOCUS %d/%d  v5",
              done_view ? count : (count ? s_focus + 1 : 0), count);
   }
   graphics_draw_text(ctx, header,
@@ -396,6 +398,13 @@ static void inbox_received(DictionaryIterator *iter, void *ctx) {
     s_focus = 0; s_scroll_top = 0;
     s_synced = false;
     refresh();
+  } else if (cmd == CMD_SET_CAP) {
+    Tuple *cap_t = dict_find(iter, MESSAGE_KEY_INDEX);
+    if (cap_t) {
+      s_cap = cap_t->value->int32;
+      if (s_cap < 1) s_cap = 1;
+      if (s_cap > MAX_ITEMS) s_cap = MAX_ITEMS;
+    }
   } else if (cmd == CMD_ITEM) {
     Tuple *list_t  = dict_find(iter, MESSAGE_KEY_LIST);
     Tuple *text_t  = dict_find(iter, MESSAGE_KEY_TEXT);
