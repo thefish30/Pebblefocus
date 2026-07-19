@@ -1,0 +1,45 @@
+{
+    "author": "thefish30@gmail.com",
+    "dependencies": {
+        "pebble-clay": "^1.0.4"
+    },
+    "keywords": [],
+    "name": "pebblefocus",
+    "pebble": {
+        "displayName": "Pebblefocus",
+        "enableMultiJS": true,
+        "messageKeys": [
+            "CMD",
+            "INDEX",
+            "TEXT",
+            "COLOR",
+            "FLAGS",
+            "COUNT",
+            "LIST",
+            "PASTE",
+            "MODE",
+            "CAP",
+            "RESET"
+        ],
+        "projectType": "native",
+        "resources": {
+            "media": [
+                {
+                    "file": "images/reload_icon.png",
+                    "name": "RELOAD_ICON",
+                    "targetPlatforms": null,
+                    "type": "bitmap"
+                }
+            ]
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "emery"
+        ],
+        "uuid": "15878c8a-5ea6-44a8-848f-2df325d8459e",
+        "watchapp": {
+            "watchface": false
+        }
+    },
+    "version": "1.0.0"
+}

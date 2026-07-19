@@ -1,14 +1,14 @@
 // Pebblefocus pkjs — phone storage + Clay config
-console.log("Pebblefocus index.js LOADED - version 2026-07-16-b (step 3)");
+console.log("Pebblefocus index.js LOADED - release 1.0");
 
 var Clay = require('pebble-clay');
 
 var HARD_MAX = 50;   // watch RAM arrays are sized to this; cap slider <= this
 
 // Commands (must match main.c)
-var CMD_ITEM = 1, CMD_SYNC_COMPLETE = 2, CMD_SYNC_START = 3, CMD_SET_CAP = 4;
+var CMD_ITEM = 1, CMD_SYNC_COMPLETE = 2, CMD_SYNC_START = 3;
 var CMD_CHECKOFF = 10, CMD_TOGGLE_DOT = 11, CMD_TOGGLE_REAPP = 12,
-    CMD_ADD = 13, CMD_COPY_BACK = 14, CMD_CLEAR_DONE = 15;
+    CMD_ADD = 13, CMD_COPY_BACK = 14, CMD_CLEAR_DONE = 15, CMD_SET_COLOR = 16;
 var FLAG_DOTTED = 1, FLAG_REAPPEND = 2;
 
 // Color indices match main.c enum:
@@ -26,10 +26,8 @@ function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
 function getActive() { return load("pf_active", []); }
 function getDone()   { return load("pf_done", []); }
-function getCap()    { return load("pf_cap", HARD_MAX); }
 function setActive(a) { save("pf_active", a); }
 function setDone(d)   { save("pf_done", d); }
-function setCap(c)    { save("pf_cap", c); }
 
 // ── Clay config ──────────────────────────────────────────────────
 var clayConfig = [
@@ -46,9 +44,15 @@ var clayConfig = [
       },
       {
         type: "text",
-        defaultValue: "Color prefixes stick until the next prefix: " +
-          "y: yellow &middot; g: green &middot; u: purple &middot; b: blue &middot; " +
-          "a: aqua &middot; p: pink &middot; r: red &middot; w: white"
+       defaultValue: "Color prefixes stick until the next prefix:" +
+          "<br>y: yellow" +
+          "<br>g: green" +
+          "<br>u: purple" +
+          "<br>b: blue" +
+          "<br>a: aqua" +
+          "<br>p: pink" +
+          "<br>r: red" +
+          "<br>w: white"
       },
       {
         type: "toggle",
@@ -61,18 +65,24 @@ var clayConfig = [
   {
     type: "section",
     items: [
-      { type: "heading", defaultValue: "Settings", size: 4 },
+      { type: "heading", defaultValue: "Watch controls", size: 4 },
       {
-        type: "slider",
-        messageKey: "CAP",
-        label: "Item cap",
-        defaultValue: 50, min: 5, max: 50, step: 5
-      },
-      {
-        type: "toggle",
-        messageKey: "RESET",
-        label: "RESET: wipe both lists",
-        defaultValue: false
+        type: "text",
+        defaultValue:
+        "ACTIVE LIST:" +
+          "<br>Tap item: dot / undot" +
+          "<br>Swipe up/down: scroll" +
+          "<br>Swipe right/left on item: change color" +
+          "<br>UP/DOWN: move focus" +
+          "<br>UP hold: add by voice" +
+          "<br>SELECT: check off" +
+          "<br>SELECT hold: toggle repeat (&#8635;)" +
+          "<br>DOWN hold: open Done list" +
+          "<br>BACK: exit" +
+        "<br><br>DONE LIST:" +
+          "<br>SELECT: copy item back to list" +
+          "<br>DOWN hold &times;2: clear all" +
+          "<br>BACK: return"
       }
     ]
   },
@@ -130,7 +140,6 @@ var syncQueue = [];
 function buildSyncQueue() {
   syncQueue = [];
   syncQueue.push({ CMD: CMD_SYNC_START });
-  syncQueue.push({ CMD: CMD_SET_CAP, INDEX: getCap() });
   getActive().forEach(function (it, i) {
     syncQueue.push({ CMD: CMD_ITEM, LIST: 0, INDEX: i, TEXT: it.t,
       COLOR: it.c, FLAGS: (it.d ? FLAG_DOTTED : 0) | (it.r ? FLAG_REAPPEND : 0) });
@@ -169,55 +178,32 @@ Pebble.addEventListener("showConfiguration", function () {
 
 Pebble.addEventListener("webviewclosed", function (e) {
   try {
-    console.log("webviewclosed fired; response present: " + !!(e && e.response));
     if (!e || !e.response) return;
-    console.log("raw response (first 200): " +
-      String(e.response).slice(0, 200));
     var s = clay.getSettings(e.response, false);
-    console.log("parsed settings keys: " + Object.keys(s).join(","));
     var val = function (k, d) {
       return (s[k] !== undefined && s[k] !== null) ?
         (s[k].value !== undefined ? s[k].value : s[k]) : d;
     };
 
-    var cap = parseInt(val("CAP", HARD_MAX), 10) || HARD_MAX;
-    if (cap > HARD_MAX) cap = HARD_MAX;
-    if (cap < 1) cap = 1;
-    setCap(cap);
-    console.log("cap set: " + cap);
-
-    if (val("RESET", false)) {
-      setActive([]); setDone([]);
-      console.log("RESET: both lists wiped");
-      Pebble.showSimpleNotificationOnPebble("Pebblefocus", "Lists wiped.");
-      resync();
-      return;
-    }
-
     var pasteText = String(val("PASTE", "") || "");
-    console.log("paste length: " + pasteText.length);
     if (pasteText.trim()) {
       var newItems = parsePaste(pasteText);
-      console.log("parsed items: " + newItems.length);
       var replace = !!val("MODE", false);
       var active = replace ? [] : getActive();
-      var room = cap - active.length;
+      var room = HARD_MAX - active.length;
       if (room < 0) room = 0;
       var accepted = newItems.slice(0, room);
       var dropped = newItems.length - accepted.length;
       setActive(active.concat(accepted));
-      console.log("stored active count: " + getActive().length +
-        ", dropped: " + dropped);
       if (dropped > 0) {
         Pebble.showSimpleNotificationOnPebble("Pebblefocus",
           "List full: " + dropped + " line" + (dropped === 1 ? "" : "s") +
-          " dropped (cap " + cap + ").");
+          " dropped (max " + HARD_MAX + ").");
       }
     }
-    console.log("resyncing");
     resync();
   } catch (err) {
-    console.log("webviewclosed ERROR: " + err.message + " | " + err.stack);
+    console.log("webviewclosed ERROR: " + err.message);
   }
 });
 
@@ -232,15 +218,14 @@ Pebble.addEventListener("appmessage", function (e) {
   if (cmd === CMD_CHECKOFF) {
     if (idx < 0 || idx >= active.length) return;
     var item = active.splice(idx, 1)[0];
+    item.d = false;
+    done.push(item);                              // every check-off records a pass
+    while (done.length > HARD_MAX) done.shift();  // rolling: drop oldest
+    setDone(done);
     if (item.r) {
-      item.d = false;
       // reappend flag deliberately retained: recurring until untoggled
-      if (active.length < getCap()) active.push(item);
-    } else {
-      item.d = false;
-      done.push(item);
-      while (done.length > HARD_MAX) done.shift(); // rolling: drop oldest
-      setDone(done);
+      if (active.length < HARD_MAX)
+        active.push({ t: item.t, c: item.c, d: false, r: true });
     }
     setActive(active);
 
@@ -251,18 +236,24 @@ Pebble.addEventListener("appmessage", function (e) {
     if (active[idx]) { active[idx].r = !active[idx].r; setActive(active); }
 
   } else if (cmd === CMD_ADD) {
-    if (active.length < getCap() && p.TEXT) {
+    if (active.length < HARD_MAX && p.TEXT) {
       active.push({ t: p.TEXT, c: 7, d: false, r: false }); // white
       setActive(active);
     }
 
   } else if (cmd === CMD_COPY_BACK) {
-    if (done[idx] && active.length < getCap()) {
+    if (done[idx] && active.length < HARD_MAX) {
       active.push({ t: done[idx].t, c: done[idx].c, d: false, r: false });
       setActive(active);                            // stays in Done
     }
 
   } else if (cmd === CMD_CLEAR_DONE) {
     setDone([]);
+
+  } else if (cmd === CMD_SET_COLOR) {
+    if (active[idx] && typeof p.COLOR === "number") {
+      active[idx].c = p.COLOR;
+      setActive(active);
+    }
   }
 });
